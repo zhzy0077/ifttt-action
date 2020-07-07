@@ -33,7 +33,7 @@ impl Feed for RssFeed {
 
         for item in channel.into_items().into_iter().take(self.config.count) {
             if item.link() == last_news_link {
-                continue;
+                break;
             }
 
             if latest_link.is_none() {
