@@ -19,35 +19,31 @@ impl Parameters {
         let mut file = File::open(&self.state_file)?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
-        let opened = match self.open(&mut bytes) {
-            Ok(opened) => opened,
-            Err(_) => {
-                println!("No states read. Use default.");
-                b"{}"
-            }
-        };
+        let opened = self.open(&mut bytes)?;
         Ok(serde_json::from_slice(opened)?)
     }
 
     pub fn write_states(&self, states: &States) -> Result<()> {
         let mut file = OpenOptions::new()
+            .create(true)
             .write(true)
             .truncate(true)
             .open(&self.state_file)?;
 
-        let mut vec = serde_json::to_vec(states)?;
-
-        let sealed = self.seal(&mut vec)?;
+        let vec = serde_json::to_vec(states)?;
+        let sealed = self.seal(vec)?;
 
         file.write_all(&sealed[..])?;
-
         file.sync_all()?;
 
         Ok(())
     }
 
-    fn seal(&self, raw: &mut Vec<u8>) -> Result<Vec<u8>> {
-        let mut key = self.state_key.clone();
+    fn seal(&self, mut raw: Vec<u8>) -> Result<Vec<u8>> {
+        let mut key = match self.state_key {
+            Some(ref key) => key.clone(),
+            None => return Ok(raw),
+        };
         key.extend(&[' '; 32]);
         let key = &key.as_bytes()[0..32];
         let key = UnboundKey::new(ALGORITHM, key)?;
@@ -58,7 +54,7 @@ impl Parameters {
         seal_key.seal_in_place_append_tag(
             Nonce::assume_unique_for_key(nonce),
             Aad::empty(),
-            raw,
+            &mut raw,
         )?;
 
         let result = [&nonce[..], &raw[..]].concat();
@@ -67,10 +63,13 @@ impl Parameters {
     }
 
     fn open<'a>(&self, sealed: &'a mut [u8]) -> Result<&'a [u8]> {
+        let mut key = match self.state_key {
+            Some(ref key) => key.clone(),
+            None => return Ok(sealed),
+        };
         if sealed.len() < NONCE_LEN {
             return Err(anyhow!("Less than nonce length."));
         }
-        let mut key = self.state_key.clone();
         key.extend(&[' '; 32]);
         let key = &key.as_bytes()[0..32];
         let key = UnboundKey::new(ALGORITHM, key)?;

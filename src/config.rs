@@ -1,7 +1,7 @@
 use crate::mapper::TextMapper;
 use crate::rss::RssFeed;
 use crate::web::WebSink;
-use crate::{ActionRun, Feeds, Mappers, Sinks, State};
+use crate::{ActionConfigs, ActionRun, Feeds, Mappers, Sinks, State};
 use anyhow::{Error, Result};
 use serde::{export::Formatter, export::TryFrom, Deserialize, Serialize};
 use std::collections::HashMap;
@@ -38,6 +38,8 @@ pub struct ActionConfig<'a> {
     mapper: KindAndConfig<'a>,
     #[serde(borrow)]
     sink: KindAndConfig<'a>,
+    #[serde(borrow, default)]
+    config: CustomConfig<'a>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KindAndConfig<'a> {
@@ -48,7 +50,7 @@ pub struct KindAndConfig<'a> {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Parameters {
     #[serde(default)]
-    pub(crate) state_key: String,
+    pub(crate) state_key: Option<String>,
     #[serde(default)]
     pub(crate) state_file: String,
 }
@@ -57,7 +59,13 @@ impl TryFrom<Config<'_>> for Vec<ActionRun<Feeds, Mappers, Sinks>> {
     type Error = Error;
     fn try_from(config: Config<'_>) -> Result<Self> {
         let mut actions = Vec::with_capacity(config.actions.len());
-        let mut states = config.parameters.read_states()?;
+        let mut states = match config.parameters.read_states() {
+            Ok(states) => states,
+            Err(_) => {
+                println!("No states is found. Use empty.");
+                HashMap::new()
+            }
+        };
 
         for action_config in config.actions {
             let state = states.remove(action_config.key).unwrap_or_default();
@@ -74,7 +82,13 @@ impl ActionConfig<'_> {
         let mapper: Mappers = self.mapper.try_into()?;
         let sink: Sinks = self.sink.try_into()?;
 
-        Ok(ActionRun::new(self.key, feed, mapper, sink, state))
+        let config = if let Some(schedule) = self.config.get("schedule") {
+            ActionConfigs::new(schedule.clone())
+        } else {
+            ActionConfigs::default()
+        };
+
+        Ok(ActionRun::new(self.key, feed, mapper, sink, state, config))
     }
 }
 

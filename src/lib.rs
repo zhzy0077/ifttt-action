@@ -9,9 +9,14 @@ use crate::rss::RssFeed;
 use crate::web::WebSink;
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use cron::Schedule;
 use enum_dispatch::enum_dispatch;
 use std::collections::HashMap;
 use std::ops::Index;
+use std::str::FromStr;
+
+const ACTION_NEXT_EXEC: &'static str = "action_next_exec";
 
 pub type States = HashMap<ActionKey, State>;
 
@@ -34,6 +39,20 @@ where
     pub sink: S,
     pub mapper: M,
     pub state: State,
+    config: ActionConfigs,
+}
+
+#[derive(Default, Debug)]
+pub struct ActionConfigs {
+    schedule: Option<String>,
+}
+
+impl ActionConfigs {
+    pub fn new(schedule: String) -> Self {
+        ActionConfigs {
+            schedule: Some(schedule),
+        }
+    }
 }
 
 impl<F, M, S> ActionRun<F, M, S>
@@ -42,13 +61,21 @@ where
     M: Mapper,
     S: Sink,
 {
-    pub fn new(key: impl Into<String>, feed: F, mapper: M, sink: S, state: State) -> Self {
+    pub fn new(
+        key: impl Into<String>,
+        feed: F,
+        mapper: M,
+        sink: S,
+        state: State,
+        config: ActionConfigs,
+    ) -> Self {
         ActionRun {
             key: key.into(),
             feed,
             mapper,
             sink,
             state,
+            config,
         }
     }
 }
@@ -61,6 +88,9 @@ where
     S: Sink,
 {
     async fn execute(&mut self) -> Result<()> {
+        if !self.should_run()? {
+            return Ok(());
+        }
         let output = self.feed.feed(&mut self.state).await?;
         for params in output.iter() {
             let input = self.mapper.map(params.as_ref())?;
@@ -72,6 +102,36 @@ where
 
     fn key(&self) -> ActionKey {
         self.key.clone()
+    }
+}
+
+impl<F, M, S> ActionRun<F, M, S>
+where
+    F: Feed,
+    M: Mapper,
+    S: Sink,
+{
+    pub fn should_run(&mut self) -> Result<bool> {
+        let should_run = match self.state.get(ACTION_NEXT_EXEC) {
+            None => true,
+            Some(t) => {
+                let next_exec = chrono::DateTime::parse_from_rfc3339(t)?;
+                Utc::now() > next_exec
+            }
+        };
+
+        match self.config.schedule {
+            Some(ref schedule) if should_run => {
+                let schedule =
+                    Schedule::from_str(schedule).expect("Unable to parse the cron expression.");
+                let next_exec_time = schedule.upcoming(Utc).next().unwrap();
+                self.state
+                    .insert(ACTION_NEXT_EXEC.to_string(), next_exec_time.to_rfc3339());
+            }
+            _ => (),
+        }
+
+        Ok(should_run)
     }
 }
 
