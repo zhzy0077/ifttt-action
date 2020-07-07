@@ -1,2 +1,2 @@
 # ifttt-action
-A ifttt solution based on GitHub Actions
+An ifttt solution based on GitHub Actions.
