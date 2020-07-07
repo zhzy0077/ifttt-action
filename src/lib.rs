@@ -2,10 +2,12 @@ pub mod config;
 mod crypto;
 mod mapper;
 mod rss;
+mod weather;
 mod web;
 
 use crate::mapper::TextMapper;
 use crate::rss::RssFeed;
+use crate::weather::WeatherFeed;
 use crate::web::WebSink;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -163,6 +165,7 @@ pub trait Sink {
 #[enum_dispatch]
 pub enum Feeds {
     RssFeed,
+    WeatherFeed,
 }
 
 #[enum_dispatch]

@@ -33,7 +33,8 @@ fn main() -> Result<()> {
 
     let combined_futures = future::join_all(actions.iter_mut().map(|action| action.execute()));
 
-    task::block_on(combined_futures);
+    let result = task::block_on(combined_futures);
+    println!("The results are: \n{:#?}", result);
 
     let states: States = actions
         .into_iter()

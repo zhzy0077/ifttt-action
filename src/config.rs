@@ -1,5 +1,6 @@
 use crate::mapper::TextMapper;
 use crate::rss::RssFeed;
+use crate::weather::WeatherFeed;
 use crate::web::WebSink;
 use crate::{ActionConfigs, ActionRun, Feeds, Mappers, Sinks, State};
 use anyhow::{Error, Result};
@@ -99,6 +100,11 @@ impl TryFrom<KindAndConfig<'_>> for Feeds {
             "rss" => RssFeed::new(
                 config.read_val::<String, _>("url")?,
                 config.read_val("count")?,
+            )
+            .into(),
+            "weather" => WeatherFeed::new(
+                config.read_val::<String, _>("key")?,
+                config.read_val::<String, _>("location")?,
             )
             .into(),
             _ => unimplemented!(),
